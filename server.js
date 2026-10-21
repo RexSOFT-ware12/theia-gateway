@@ -101,6 +101,18 @@ function sessionCookie(value, expiresAt) {
   return `${SESSION_COOKIE}=${value}; Path=/; Expires=${expires}; Max-Age=${Math.max(0, Math.floor((expiresAt - Date.now()) / 1000))}; HttpOnly; Secure; SameSite=None; Partitioned`;
 }
 
+// Theia sets its connection token as a SameSite=Strict cookie. Embedded in a
+// cross-site iframe the browser drops it, and Theia then answers every
+// Socket.IO handshake with 403. Re-issue upstream cookies the same way the
+// gateway issues its own session cookie.
+function rewriteUpstreamCookie(value) {
+  let cookie = value.replace(/;\s*SameSite=[^;]*/gi, "");
+  if (!/;\s*Secure(;|$)/i.test(cookie)) cookie += "; Secure";
+  cookie += "; SameSite=None";
+  if (!/;\s*Partitioned(;|$)/i.test(cookie)) cookie += "; Partitioned";
+  return cookie;
+}
+
 function addUpstreamAuthentication(proxyRequest, authorization, upstreamOrigin) {
   proxyRequest.setHeader("Authorization", authorization);
   // changeOrigin rewrites Host to the upstream, but Theia rejects requests whose
@@ -135,6 +147,8 @@ function createGatewayServer(config) {
   proxy.on("proxyRes", (proxyResponse, request) => {
     if (proxyResponse.statusCode === 403) console.error(`Theia upstream returned 403 for ${request.method} ${request.url.split("?")[0]}`);
     delete proxyResponse.headers["www-authenticate"];
+    const upstreamCookies = proxyResponse.headers["set-cookie"];
+    if (Array.isArray(upstreamCookies)) proxyResponse.headers["set-cookie"] = upstreamCookies.map(rewriteUpstreamCookie);
   });
   proxy.on("error", (error, request, response) => {
     console.error("Theia upstream proxy failed:", error.message);
