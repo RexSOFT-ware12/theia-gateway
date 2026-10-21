@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: picd-cloud-ide
+    runtime: docker
+    plan: standard
+    rootDir: theia-master
+    dockerfilePath: ./Dockerfile.picd
+    dockerContext: .
+    healthCheckPath: /healthz
+    disk:
+      name: picd-cloud-ide-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: THEIA_BASIC_AUTH_USER
+        sync: false
+      - key: THEIA_BASIC_AUTH_PASSWORD
+        sync: false
+
+  - type: web
+    name: picd-cloud-ide-gateway
+    runtime: docker
+    plan: starter
+    rootDir: theia-gateway
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: THEIA_UPSTREAM_URL
+        sync: false
+      - key: THEIA_BASIC_AUTH_USER
+        sync: false
+      - key: THEIA_BASIC_AUTH_PASSWORD
+        sync: false
+      - key: DASHBOARD_ORIGIN
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true

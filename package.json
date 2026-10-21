@@ -1,0 +1,12 @@
+{
+  "name": "picd-theia-login-gateway",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "http-proxy": "1.18.1"
+  }
+}
