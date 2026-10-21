@@ -101,8 +101,11 @@ function sessionCookie(value, expiresAt) {
   return `${SESSION_COOKIE}=${value}; Path=/; Expires=${expires}; Max-Age=${Math.max(0, Math.floor((expiresAt - Date.now()) / 1000))}; HttpOnly; Secure; SameSite=None; Partitioned`;
 }
 
-function addUpstreamAuthentication(proxyRequest, authorization) {
+function addUpstreamAuthentication(proxyRequest, authorization, upstreamOrigin) {
   proxyRequest.setHeader("Authorization", authorization);
+  // changeOrigin rewrites Host to the upstream, but Theia rejects requests whose
+  // Origin does not match Host (403), so present the upstream's own origin.
+  if (proxyRequest.getHeader("origin")) proxyRequest.setHeader("Origin", upstreamOrigin);
   const cookie = proxyRequest.getHeader("cookie");
   if (typeof cookie !== "string") return;
   const forwardedCookies = cookie.split(";").map(value => value.trim()).filter(value => !value.startsWith(`${SESSION_COOKIE}=`));
@@ -122,13 +125,15 @@ function createGatewayServer(config) {
     timeout: 0,
   });
 
+  const upstreamOrigin = new URL(config.upstreamUrl).origin;
   proxy.on("proxyReq", proxyRequest => {
-    addUpstreamAuthentication(proxyRequest, authorization);
+    addUpstreamAuthentication(proxyRequest, authorization, upstreamOrigin);
   });
   proxy.on("proxyReqWs", proxyRequest => {
-    addUpstreamAuthentication(proxyRequest, authorization);
+    addUpstreamAuthentication(proxyRequest, authorization, upstreamOrigin);
   });
-  proxy.on("proxyRes", proxyResponse => {
+  proxy.on("proxyRes", (proxyResponse, request) => {
+    if (proxyResponse.statusCode === 403) console.error(`Theia upstream returned 403 for ${request.method} ${request.url.split("?")[0]}`);
     delete proxyResponse.headers["www-authenticate"];
   });
   proxy.on("error", (error, request, response) => {
