@@ -87,11 +87,11 @@ function readJson(request) {
   });
 }
 
-function setCorsHeaders(request, response, dashboardOrigin) {
+function setCorsHeaders(request, response, dashboardOrigins) {
   const origin = request.headers.origin;
   response.setHeader("Vary", "Origin");
-  if (origin !== dashboardOrigin) return false;
-  response.setHeader("Access-Control-Allow-Origin", dashboardOrigin);
+  if (!dashboardOrigins.includes(origin)) return false;
+  response.setHeader("Access-Control-Allow-Origin", origin);
   response.setHeader("Access-Control-Allow-Credentials", "true");
   return true;
 }
@@ -149,7 +149,7 @@ function createGatewayServer(config) {
     }
 
     if (pathname.startsWith("/auth/")) {
-      const corsAllowed = setCorsHeaders(request, response, config.dashboardOrigin);
+      const corsAllowed = setCorsHeaders(request, response, config.dashboardOrigins || [config.dashboardOrigin]);
       if (!corsAllowed) {
         sendJson(response, 403, { error: "Origin is not allowed." });
         return;
@@ -252,16 +252,16 @@ function loadConfig(environment = process.env) {
   const upstreamUrl = environment.THEIA_UPSTREAM_URL;
   const username = environment.THEIA_BASIC_AUTH_USER;
   const password = environment.THEIA_BASIC_AUTH_PASSWORD;
-  const dashboardOrigin = environment.DASHBOARD_ORIGIN;
+  const dashboardOrigins = environment.DASHBOARD_ORIGIN?.split(",").map(origin => origin.trim()).filter(Boolean);
   const sessionSecret = environment.SESSION_SECRET;
-  if (!upstreamUrl || !username || !password || !dashboardOrigin || !sessionSecret) {
+  if (!upstreamUrl || !username || !password || !dashboardOrigins?.length || !sessionSecret) {
     throw new Error("Set THEIA_UPSTREAM_URL, THEIA_BASIC_AUTH_USER, THEIA_BASIC_AUTH_PASSWORD, DASHBOARD_ORIGIN, and SESSION_SECRET.");
   }
   let parsedUpstream;
-  let parsedDashboard;
+  let parsedDashboards;
   try {
     parsedUpstream = new URL(upstreamUrl);
-    parsedDashboard = new URL(dashboardOrigin);
+    parsedDashboards = dashboardOrigins.map(origin => new URL(origin));
   } catch {
     throw new Error("THEIA_UPSTREAM_URL and DASHBOARD_ORIGIN must be valid URLs.");
   }
@@ -271,11 +271,15 @@ function loadConfig(environment = process.env) {
   if (parsedUpstream.username || parsedUpstream.password || parsedUpstream.search || parsedUpstream.hash) {
     throw new Error("THEIA_UPSTREAM_URL must not include credentials, a query string, or a fragment.");
   }
-  if (parsedDashboard.origin !== dashboardOrigin || (parsedDashboard.protocol !== "https:" && parsedDashboard.hostname !== "localhost")) {
-    throw new Error("DASHBOARD_ORIGIN must be an HTTPS origin (or localhost for development), with no path.");
+  if (parsedDashboards.some((parsed, index) =>
+    parsed.origin !== dashboardOrigins[index] ||
+    (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname))) ||
+    parsed.username || parsed.password || parsed.search || parsed.hash
+  )) {
+    throw new Error("Each DASHBOARD_ORIGIN must be an HTTPS origin (or localhost for development), with no path.");
   }
   if (Buffer.byteLength(sessionSecret) < 32) throw new Error("SESSION_SECRET must be at least 32 bytes.");
-  return { upstreamUrl, username, password, dashboardOrigin, sessionSecret };
+  return { upstreamUrl, username, password, dashboardOrigins, sessionSecret };
 }
 
 if (require.main === module) {

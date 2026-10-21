@@ -37,7 +37,7 @@ test("gateway auth session, credential proxy, and logout", async t => {
     upstreamUrl: `http://127.0.0.1:${upstreamPort}`,
     username,
     password,
-    dashboardOrigin,
+    dashboardOrigins: [dashboardOrigin, "https://scans.example"],
     sessionSecret: "a".repeat(48),
   });
   const gatewayPort = await listen(gateway);
@@ -51,6 +51,10 @@ test("gateway auth session, credential proxy, and logout", async t => {
 
   const rejectedOrigin = await fetch(`${url}/auth/session`, { headers: { Origin: "https://untrusted.example" } });
   assert.equal(rejectedOrigin.status, 403);
+
+  const secondAllowedOrigin = await fetch(`${url}/auth/session`, { headers: { Origin: "https://scans.example" } });
+  assert.equal(secondAllowedOrigin.status, 200);
+  assert.equal(secondAllowedOrigin.headers.get("access-control-allow-origin"), "https://scans.example");
 
   const deniedProxy = await fetch(`${url}/workspace`);
   assert.equal(deniedProxy.status, 401);
@@ -114,4 +118,22 @@ test("configuration rejects invalid origins and short session secrets", () => {
   };
   assert.throws(() => loadConfig(values), /at least 32 bytes/);
   assert.throws(() => loadConfig({ ...values, DASHBOARD_ORIGIN: "https://dashboard.example/path", SESSION_SECRET: "s".repeat(32) }), /with no path/);
+});
+
+test("configuration accepts a comma-separated list of dashboard origins", () => {
+  const config = loadConfig({
+    THEIA_UPSTREAM_URL: "https://ide.example",
+    THEIA_BASIC_AUTH_USER: "user",
+    THEIA_BASIC_AUTH_PASSWORD: "password",
+    DASHBOARD_ORIGIN: "https://dashboard.example, https://scans.example",
+    SESSION_SECRET: "s".repeat(32),
+  });
+  assert.deepEqual(config.dashboardOrigins, ["https://dashboard.example", "https://scans.example"]);
+  assert.throws(() => loadConfig({
+    THEIA_UPSTREAM_URL: "https://ide.example",
+    THEIA_BASIC_AUTH_USER: "user",
+    THEIA_BASIC_AUTH_PASSWORD: "password",
+    DASHBOARD_ORIGIN: "https://dashboard.example, not-a-url",
+    SESSION_SECRET: "s".repeat(32),
+  }), /must be valid URLs/);
 });
