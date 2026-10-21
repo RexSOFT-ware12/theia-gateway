@@ -4,7 +4,6 @@ services:
     name: picd-cloud-ide-gateway
     runtime: docker
     plan: starter
-    rootDir: theia-gateway
     dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz
     envVars:
